@@ -5,6 +5,8 @@
 // @description  디시 url 방문 기록을 수집하여 페이지에 반영
 // @author       JKAKK
 // @match        https://gall.dcinside.com/*
+// @updateURL    https://raw.githubusercontent.com/junsarakill/jk-dcinside-visited-link-manager/main/JKDVLM.user.js
+// @downloadURL  https://raw.githubusercontent.com/junsarakill/jk-dcinside-visited-link-manager/main/JKDVLM.user.js
 // @grant        GM_setValue
 // @grant        GM_getValue
 // ==/UserScript==
