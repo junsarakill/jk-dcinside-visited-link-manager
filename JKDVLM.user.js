@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DCInside Visited Link Manager
 // @namespace    http://tampermonkey.net/
-// @version      0.1
+// @version      0.2
 // @description  디시 url 방문 기록을 수집하여 페이지에 반영
 // @author       JKAKK
 // @match        https://gall.dcinside.com/*
@@ -19,7 +19,7 @@
     // ==========================================
     const CONFIG = {
         // 디버깅 로그 활성화 여부
-        isDebug: false 
+        isDebug: false
         ,STORAGE_KEY: 'dc_visited_posts_store'
         ,EXPIRY_DAYS: 90
         ,EXPIRY_TIME: 90 * 24 * 60 * 60 * 1000
@@ -32,17 +32,27 @@
     /**
      * 전용 디버그 로거
      */
-    function log(msg) {
-        if (CONFIG.isDebug) {
-            console.log(`[JKDVLM] ${msg}`);
+    function log(msg) 
+    {
+        if (CONFIG.isDebug) 
+        {
+            const now = new Date();
+            const timeStr = now.toTimeString().split(' ')[0]; // "HH:MM:SS" 형식 추출
+            console.log(`[JKDVLM] [${timeStr}]\n${msg}`);
         }
     }
+
+    log("스크립트 작동")
 
     /**
      * 스토리지를 불러오고, 90일이 지난 오래된 방문 기록을 자동 청소(Purge)합니다.
      */
     function loadAndCleanStorage() {
-        let visitedMap = GM_getValue(CONFIG.STORAGE_KEY, {});
+        // GM_getValue로 가져온 값을 구조분해 할당이나 JSON 변환을 통해 
+    // 이전 메모리 캐시와의 연결을 완전히 끊고 새로운 객체로 할당받습니다.
+    let rawData = GM_getValue(CONFIG.STORAGE_KEY, {});
+    log(`doremi rawdata ${Object.keys(rawData).length}개`)
+    let visitedMap = JSON.parse(JSON.stringify(rawData));
         const now = Date.now();
         let isModified = false;
         let cleanedCount = 0;
@@ -197,52 +207,95 @@
         }
         setTimeout(processDocument, 100);
 
+        // 직전 URL을 기억할 변수 선언
+        let lastUrl = location.href;
         let debounceTimer = null;
-const observer = new MutationObserver((mutations) => {
-    let hasRelevantChange = false;
 
-    // 감지된 변화(mutations)들을 순회하며 실제 글 목록 관련 변화인지 확인
-    for (const mutation of mutations) {
-        // 1. 새로운 요소가 추가된 경우
-        if (mutation.addedNodes.length > 0) {
-            for (const node of mutation.addedNodes) {
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                    // 추가된 노드가 글 목록('.gall_list')이거나 그 내부의 글 링크를 포함하는 경우
-                    if (node.classList.contains('gall_list') || 
-                        node.querySelector('.gall_list') || 
-                        node.querySelector('a[href*="/board/view/"]')) {
-                        hasRelevantChange = true;
-                        break;
+        const observer = new MutationObserver((mutations) => 
+        {
+            // log("옵저버 작동")
+            let hasRelevantChange = false;
+            let isUrlChanged = false;
+
+            // 1. DOM에 변화가 생겼을 때 주소창 URL이 실제로 변경되었는지 확인
+            if (location.href !== lastUrl)
+            {
+                lastUrl = location.href;
+                isUrlChanged = true;
+            }
+
+            // 감지된 변화(mutations)들을 순회하며 실제 글 목록 관련 변화인지 확인
+            for (const mutation of mutations) 
+            {
+                // 1. 새로운 요소가 추가된 경우
+                if (mutation.addedNodes.length > 0) 
+                {
+                    for (const node of mutation.addedNodes) 
+                    {
+                        if (node.nodeType === Node.ELEMENT_NODE) 
+                        {
+                            // 추가된 노드가 글 목록('.gall_list')이거나 그 내부의 글 링크를 포함하는 경우
+                            if (node.classList.contains('gall_list') || 
+                                node.querySelector('.gall_list') || 
+                                node.querySelector('a[href*="/board/view/"]')) 
+                            {
+                                hasRelevantChange = true;
+                                break;
+                            }
+                        }
                     }
                 }
+                if (hasRelevantChange) break;
             }
-        }
-        if (hasRelevantChange) break;
+
+            // 2. URL이 변경된 경우 기존 타이머 내부에 있던 라우팅 분기 처리 수행
+            if (isUrlChanged)
+            {
+                log(`[Tracker] 🔍 주소창 변경 감지됨: ${location.href}`);
+                
+                const currentUrl = new URL(location.href);
+                const galleryId = currentUrl.searchParams.get('id');
+                const postNo = currentUrl.searchParams.get('no');
+
+                // 변경된 URL이 게시글 조회(view) 페이지 형태라면 수집기 작동
+                if (galleryId && postNo)
+                {
+                    log(`[Tracker] 🎉 미리보기 등으로 인한 글 조회 감지 -> 수집 실행 (${galleryId}_${postNo})`);
+                    initPostTracker();
+                }
+                else
+                {
+                    initListViewStyler();
+                }
+            }
+
+            // 3. 글 목록 관련 변화일 때만 디바운스를 거쳐 스타일 재적용
+            if (hasRelevantChange)
+            {
+                if (debounceTimer) clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => 
+                {
+                    log('[Styler] 👁️ 글 목록 갱신(리프레셔 등) 감지됨 -> 스타일 재적용');
+
+                    processDocument();
+                }, 300);
+            }
+        });
+
+        // body를 감시하되, attributes는 제외하고 자식 노드 추가/삭제(childList)만 엄격하게 감시
+        observer.observe(document.body, 
+        {
+            childList: true,
+            subtree: true,
+            attributes: false // 속성 변화 감지 제외 (광고/스크립트 노이즈 방지)
+        });
+
+        log('[Styler] 👁️ 최적화된 DOM 감시 시작 (글 목록 변경 시에만 반응)');
     }
 
-    // 글 목록 관련 변화일 때만 디바운스를 거쳐 실행
-    if (hasRelevantChange) {
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-            log('[Styler] 👁️ 글 목록 갱신(리프레셔 등) 감지됨 -> 스타일 재적용');
-            processDocument();
-        }, 300);
-    }
-});
 
-// body를 감시하되, attributes는 제외하고 자식 노드 추가/삭제(childList)만 엄격하게 감시
-observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: false // 속성 변화 감지 제외 (광고/스크립트 노이즈 방지)
-});
-
-log('[Styler] 👁️ 최적화된 DOM 감시 시작 (글 목록 변경 시에만 반응)');
-    }
-
-
-    // ==========================================
-// [Execution Entry Point]
+// ==========================================
+// MARK:실행 영역
 // ==========================================
 function main() 
 {
@@ -251,31 +304,6 @@ function main()
     // 1. 최초 로드 시 실행
     initPostTracker();
     initListViewStyler();
-
-    // 이전 URL을 기억해 둘 변수
-let lastUrl = location.href;
-
-// FIXME 폴링 방식에서 이벤트 기반으로 변경 필요 | 클릭 기반
-// 0.2초마다 주소창 변화를 강제로 체크하는 확실한 방법
-setInterval(() => {
-    if (location.href !== lastUrl) {
-        lastUrl = location.href; // 현재 URL 갱신
-        
-        log(`[Tracker] 🔍 주소창 변경 감지됨: ${location.href}`);
-        
-        const currentUrl = new URL(location.href);
-        const galleryId = currentUrl.searchParams.get('id');
-        const postNo = currentUrl.searchParams.get('no');
-
-        // 변경된 URL이 게시글 조회(view) 페이지 형태라면 수집기 작동
-        if (galleryId && postNo) {
-            log(`[Tracker] 🎉 미리보기 등으로 인한 글 조회 감지 -> 수집 실행 (${galleryId}_${postNo})`);
-            initPostTracker();
-        }
-        else
-            initListViewStyler()
-    }
-}, CONFIG.urlCheckInterval);
 }
 
 // 스크립트 실행
