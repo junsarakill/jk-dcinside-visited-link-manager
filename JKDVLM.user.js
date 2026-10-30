@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DCInside Visited Link Manager
 // @namespace    http://tampermonkey.net/
-// @version      0.2
+// @version      0.3
 // @description  디시 url 방문 기록을 수집하여 페이지에 반영
 // @author       JKAKK
 // @match        https://gall.dcinside.com/*
@@ -146,7 +146,7 @@
         // 정의만 되어있던 CSS 주입 함수를 여기서 실행하도록 추가
         injectCustomCSS();
 
-        const visitedMap = loadAndCleanStorage();
+        let visitedMap = loadAndCleanStorage();
         log(`[Styler] 스토리지에 적재된 총 방문 기록 수: ${Object.keys(visitedMap).length}개`);
 
         /**
@@ -195,6 +195,8 @@
         }
 
         function processDocument() {
+            // @@ 방문 기록 로드 | 구조 개선 검토
+            visitedMap = loadAndCleanStorage();
             const targetContainer = document.querySelector('.gall_list') || document.body;
             applyVisitedStyles(targetContainer);
         }
@@ -263,9 +265,10 @@
                     log(`[Tracker] 🎉 미리보기 등으로 인한 글 조회 감지 -> 수집 실행 (${galleryId}_${postNo})`);
                     initPostTracker();
                 }
+                // 페이지로 되돌아 왔다면 스타일 재적용
                 else
                 {
-                    initListViewStyler();
+                    processDocument();
                 }
             }
 
