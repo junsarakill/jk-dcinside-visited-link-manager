@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DCInside Visited Link Manager
 // @namespace    http://tampermonkey.net/
-// @version      0.3
+// @version      0.4
 // @description  디시 url 방문 기록을 수집하여 페이지에 반영
 // @author       JKAKK
 // @match        https://gall.dcinside.com/*
@@ -14,100 +14,146 @@
 (function() {
     'use strict';
 
-    // ==========================================
-    // [Logger & Config Management]
-    // ==========================================
-    const CONFIG = {
-        // 디버깅 로그 활성화 여부
-        isDebug: false
-        ,STORAGE_KEY: 'dc_visited_posts_store'
-        ,EXPIRY_DAYS: 90
-        ,EXPIRY_TIME: 90 * 24 * 60 * 60 * 1000
-        // url 체크 타이머 간격 ms
-        ,urlCheckInterval: 200
-        ,visitedColor: '#795091'
-        
-    };
-
-    /**
-     * 전용 디버그 로거
-     */
-    function log(msg) 
+    // FIXME 클래스화
+    class JKDVLM
     {
-        if (CONFIG.isDebug) 
+        // MARK: 변수 영역
+        CONFIG = {
+            // 디버깅 로그 활성화 여부
+            isDebug: false
+            ,STORAGE_KEY: 'dc_visited_posts_store'
+            ,EXPIRY_DAYS: 90
+            ,EXPIRY_TIME: 90 * 24 * 60 * 60 * 1000
+            // url 체크 타이머 간격 ms
+            ,urlCheckInterval: 200
+            ,visitedColor: '#795091'
+            
+        };
+        
+        // MARK: 함수 영역
+        constructor()
         {
+            this.init();
+        }
+
+        init()
+        {
+            log("스크립트 작동")
+        }
+
+        /**
+         * #### 전용 디버그 로거
+         * @description [JKDVLM] [타임스탬프] [호출함수명] \n 메시지 구성
+         * @param {string} msg - 메시지
+         * @returns {void} - 
+         */
+        log(msg) 
+        {
+            if(this.CONFIG.isDebug === false)
+                return
+
             const now = new Date();
-            const timeStr = now.toTimeString().split(' ')[0]; // "HH:MM:SS" 형식 추출
-            console.log(`[JKDVLM] [${timeStr}]\n${msg}`);
+            // "HH:MM:SS" 형식 추출
+            const timeStr = now.toTimeString().split(' ')[0]; 
+
+             // log()를 직접 호출한 함수명 추출
+            const caller = new Error().stack
+                ?.split('\n')[2]
+                ?.trim()
+                ?.match(/at (.+?) \(/)?.[1] ?? "unknown";
+
+            console.log(`[JKDVLM] [${timeStr}] [${caller}]\n${msg}`);
         }
-    }
 
-    log("스크립트 작동")
+        /**
+         * #### 저장된 방문기록 불러오기 및 오래된 기록 제거
+         * @returns {Map} - 방문기록 맵
+         */
+        loadAndCleanStorage() 
+        {
+            const storageKey = this.CONFIG.STORAGE_KEY
+            const expiryTime = this.CONFIG.EXPIRY_TIME
 
-    /**
-     * 스토리지를 불러오고, 90일이 지난 오래된 방문 기록을 자동 청소(Purge)합니다.
-     */
-    function loadAndCleanStorage() {
-        // GM_getValue로 가져온 값을 구조분해 할당이나 JSON 변환을 통해 
-    // 이전 메모리 캐시와의 연결을 완전히 끊고 새로운 객체로 할당받습니다.
-    let rawData = GM_getValue(CONFIG.STORAGE_KEY, {});
-    log(`doremi rawdata ${Object.keys(rawData).length}개`)
-    let visitedMap = JSON.parse(JSON.stringify(rawData));
-        const now = Date.now();
-        let isModified = false;
-        let cleanedCount = 0;
+            // @@readme에 언급된 캐시 문제 테스트용 그냥 getvalue 안하고 새 객체 할당 받기
+            let rawData = GM_getValue(storageKey, {});
+            log(`${Object.keys(rawData).length}개`)
 
-        for (const key in visitedMap) {
-            if (now - visitedMap[key] > CONFIG.EXPIRY_TIME) {
-                delete visitedMap[key];
-                isModified = true;
-                cleanedCount++;
+            let visitedMap = JSON.parse(JSON.stringify(rawData));
+            const now = Date.now();
+            let isModified = false;
+            let cleanedCount = 0;
+    
+            for (const key in visitedMap) 
+            {
+                if (now - visitedMap[key] > expiryTime) 
+                {
+                    delete visitedMap[key];
+                    isModified = true;
+                    cleanedCount++;
+                }
             }
+            
+            // 오래된 방문 기록 있으면 제거 확정
+            if (isModified) 
+            {
+                GM_setValue(this.CONFIG.STORAGE_KEY, visitedMap);
+                log(`[Storage] 만료된 기록 ${cleanedCount}개 자동 청소 완료`);
+            }
+    
+            return visitedMap;
         }
 
-        if (isModified) {
-            GM_setValue(CONFIG.STORAGE_KEY, visitedMap);
-            log(`[Storage] 만료된 기록 ${cleanedCount}개 자동 청소 완료`);
+        /**
+         * #### 방문 기록 단일 글 저장
+         * @param {string} galleryId - 갤러리url이름
+         * @param {string} postNo - 글번호
+         * @returns {void} - 
+         */
+        saveVisitedPost(galleryId, postNo) 
+        {
+            if (!galleryId || !postNo) 
+                return;
+    
+            const key = `${galleryId}_${postNo}`;
+            let visitedMap = this.loadAndCleanStorage();
+    
+            if (!visitedMap[key]) 
+            {
+                visitedMap[key] = Date.now();
+                GM_setValue(this.CONFIG.STORAGE_KEY, visitedMap);
+                log(`[Tracker] 새 글 방문 기록 저장 성공 -> 갤러리: ${galleryId}, 글번호: ${postNo}`);
+            } 
+            else 
+                log(`[Tracker] 이미 기록되어 있는 글 -> 갤러리: ${galleryId}, 글번호: ${postNo}`);
         }
 
-        return visitedMap;
-    }
+        // MARK: 방문 기록 수집
+        /**
+         * #### 방문 기록 수집
+         * @description url 검사해서 개별 글일 경우 수집 | 이 함수를 수집 시점에서 사용
+         * @returns {void} - 
+         */
+        initPostTracker() 
+        {
+            if (!location.pathname.includes('/board/view/'))
+                return;
+    
+            log('[Tracker] 개별 글 보기 페이지 진입 감지');
+    
+            const urlParams = new URLSearchParams(location.search);
+            const galleryId = urlParams.get('id');
+            const postNo = urlParams.get('no');
+    
+            log(`[Tracker] 파싱된 정보 - id: ${galleryId}, no: ${postNo}`);
 
-    /**
-     * 방문 기록 스토리지에 특정 글을 저장합니다.
-     */
-    function saveVisitedPost(galleryId, postNo) {
-        if (!galleryId || !postNo) return;
-
-        const key = `${galleryId}_${postNo}`;
-        let visitedMap = loadAndCleanStorage();
-
-        if (!visitedMap[key]) {
-            visitedMap[key] = Date.now();
-            GM_setValue(CONFIG.STORAGE_KEY, visitedMap);
-            log(`[Tracker] 새 글 방문 기록 저장 성공 -> 갤러리: ${galleryId}, 글번호: ${postNo}`);
-        } else {
-            log(`[Tracker] 이미 기록되어 있는 글 -> 갤러리: ${galleryId}, 글번호: ${postNo}`);
+            this.saveVisitedPost(galleryId, postNo);
         }
     }
 
 
-    // ==========================================
-    // [Core Feature 1: 방문 감지 및 수집]
-    // 개별 글 보기 페이지 진입 시 실행
-    // ==========================================
-    function initPostTracker() {
-        if (!location.pathname.includes('/board/view/')) return;
+    // @@ 여기부터
 
-        log('[Tracker] 개별 글 보기 페이지 진입 감지');
 
-        const urlParams = new URLSearchParams(location.search);
-        const galleryId = urlParams.get('id');
-        const postNo = urlParams.get('no');
-
-        log(`[Tracker] 파싱된 정보 - id: ${galleryId}, no: ${postNo}`);
-        saveVisitedPost(galleryId, postNo);
-    }
 
         // 변경 후 (v0.4)
     function injectCustomCSS() {
