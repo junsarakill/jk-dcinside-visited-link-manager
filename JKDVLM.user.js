@@ -27,8 +27,15 @@
             // url 체크 타이머 간격 ms
             ,urlCheckInterval: 200
             ,visitedColor: '#795091'
-            
+            // 디바운드 시간 ms
+            ,debounceDelay: 300
         };
+
+        /**
+         * #### 옵저버
+         * @type {MutationObserver} 
+         */
+        observer = null;
         
         // MARK: 함수 영역
         constructor()
@@ -186,80 +193,98 @@
         {
             this.log('[Styler] 목록 페이지 스타일러 초기화 시작');
             
-            // CSS 주입 함수를 여기서 실행하도록 추가
+            // CSS 주입
             this.injectCustomCSS();
     
-            let visitedMap = this.loadAndCleanStorage();
-            this.log(`[Styler] 스토리지에 적재된 총 방문 기록 수: ${Object.keys(visitedMap).length}개`);
-    
-            /**
-             * 컨테이너 내의 게시물 링크들을 순회하며 방문 기록 대조 후 CSS 적용
-             */
-            // @@ 여기부터 중첩 함수 구조 개선
-            function applyVisitedStyles(rootElement) 
-            {
-                const containers = rootElement.querySelectorAll ? [rootElement] : rootElement;
-                let matchCount = 0;
-    
-                containers.forEach(container => {
-                    const links = container.querySelectorAll('a[href*="/board/view/"]');
-                    this.log(`[Styler] 현재 DOM에서 발견된 글 링크 수: ${links.length}개`);
-                    
-                    links.forEach(link => {
-                        try 
-                        {
-                            const href = link.getAttribute('href');
-                            const url = new URL(href, location.origin);
-                            const galleryId = url.searchParams.get('id');
-                            const postNo = url.searchParams.get('no');
-    
-                            if (galleryId && postNo) 
-                            {
-                                const key = `${galleryId}_${postNo}`;
-    
-                                if (visitedMap[key]) 
-                                {
-                                    // 변경 후
-                                    // this.log(`[MatchSuccess] 🎉 방문 기록 일치함! -> key: [${key}] | 텍스트: "${link.innerText.trim()}"`);
-    
-                                    link.classList.add('jk-custom-visited');
-                                    link.querySelectorAll('*').forEach(child => child.classList.add('jk-custom-visited'));
-                                    matchCount++;
-                                }
-                            }
-                        } 
-                        catch (e) 
-                        {
-                            this.log(`[LinkScan] ⚠️ URL 파싱 에러 발생: ${e.message}`);
-                        }
-                    });
-                });
-    
-                this.log(`[Styler] ✨ 이번 렌더링 결과 -> 스타일 적용된 방문 글: ${matchCount}개`);            
-    
-            }
-    
-            function processDocument() {
-                // @@ 방문 기록 로드 | 구조 개선 검토
-                visitedMap = loadAndCleanStorage();
-                const targetContainer = document.querySelector('.gall_list') || document.body;
-                applyVisitedStyles(targetContainer);
-            }
-    
+            // let visitedMap = this.loadAndCleanStorage();
+            // this.log(`[Styler] 스토리지에 적재된 총 방문 기록 수: ${Object.keys(visitedMap).length}개`);
+            
+            const callback = this.processDocument.bind(this);
+            
             // 초기 로드 시 실행
-            if (document.readyState === 'loading') {
-                window.addEventListener('DOMContentLoaded', processDocument);
-            } else {
-                processDocument();
+            if (document.readyState === 'loading')
+            {
+                window.addEventListener('DOMContentLoaded', callback);
             }
-            setTimeout(processDocument, 100);
-    
+            // else
+                // {
+            //     processDocument();
+            // }
+                
+            setTimeout(callback, 100);
+                
+            this.initListViewObserver();
+        }
+
+        /**
+         * #### 컨테이너 내의 게시물 링크들을 순회하며 방문 기록 대조 후 CSS 적용
+         * @param {HTMLElement} rootElement - 설명
+         * @returns {void} - 
+         */
+        applyVisitedStyles(rootElement, visitedMap) 
+        {
+            const containers = rootElement.querySelectorAll ? [rootElement] : rootElement;
+            let matchCount = 0;
+
+            containers.forEach(container => {
+                /** @type {NodeListOf<HTMLAnchorElement>} */
+                const links = container.querySelectorAll('a[href*="/board/view/"]');
+                this.log(`[Styler] 현재 DOM에서 발견된 글 링크 수: ${links.length}개`);
+                
+                links.forEach(link => {
+                    try 
+                    {
+                        const href = link.getAttribute('href');
+                        const url = new URL(href, location.origin);
+                        const galleryId = url.searchParams.get('id');
+                        const postNo = url.searchParams.get('no');
+
+                        if (galleryId && postNo) 
+                        {
+                            const key = `${galleryId}_${postNo}`;
+
+                            if (visitedMap[key]) 
+                            {
+                                // this.log(`[MatchSuccess] 🎉 방문 기록 일치함! -> key: [${key}] | 텍스트: "${link.innerText.trim()}"`);
+
+                                link.classList.add('jk-custom-visited');
+                                link.querySelectorAll('*').forEach(child => child.classList.add('jk-custom-visited'));
+                                matchCount++;
+                            }
+                        }
+                    } 
+                    catch (e) 
+                    {
+                        this.log(`[LinkScan] ⚠️ URL 파싱 에러 발생: ${e.message}`);
+                    }
+                });
+            });
+
+            this.log(`[Styler] ✨ 이번 렌더링 결과 -> 스타일 적용된 방문 글: ${matchCount}개`);            
+
+        }
+
+        /**
+         * #### 본문부분을 body 에서 가져와서 방문글 스타일 적용
+         * @description 방문 기록을 적용하는 최말단
+         * @returns {void} - 
+         */
+        processDocument() 
+        {
+            // @@ 방문 기록 로드 | 구조 개선 검토
+            let visitedMap = this.loadAndCleanStorage();
+            const targetContainer = document.querySelector('.gall_list') || document.body;
+
+            this.applyVisitedStyles(targetContainer, visitedMap);
+        }
+
+        initListViewObserver()
+        {
             // 직전 URL을 기억할 변수 선언
             let lastUrl = location.href;
             let debounceTimer = null;
     
-            const observer = new MutationObserver((mutations) => 
-            {
+            this.observer = new MutationObserver((mutations) => {
                 // this.log("옵저버 작동")
                 let hasRelevantChange = false;
                 let isUrlChanged = false;
@@ -282,9 +307,9 @@
                             if (node.nodeType === Node.ELEMENT_NODE) 
                             {
                                 // 추가된 노드가 글 목록('.gall_list')이거나 그 내부의 글 링크를 포함하는 경우
-                                if (node.classList.contains('gall_list') || 
-                                    node.querySelector('.gall_list') || 
-                                    node.querySelector('a[href*="/board/view/"]')) 
+                                if (node.classList.contains('gall_list') 
+                                || node.querySelector('.gall_list') 
+                                || node.querySelector('a[href*="/board/view/"]')) 
                                 {
                                     hasRelevantChange = true;
                                     break;
@@ -292,7 +317,9 @@
                             }
                         }
                     }
-                    if (hasRelevantChange) break;
+
+                    if (hasRelevantChange) 
+                        break;
                 }
     
                 // 2. URL이 변경된 경우 기존 타이머 내부에 있던 라우팅 분기 처리 수행
@@ -308,42 +335,45 @@
                     if (galleryId && postNo)
                     {
                         this.log(`[Tracker] 🎉 미리보기 등으로 인한 글 조회 감지 -> 수집 실행 (${galleryId}_${postNo})`);
-                        initPostTracker();
+                        this.initPostTracker();
                     }
                     // 페이지로 되돌아 왔다면 스타일 재적용
                     else
                     {
-                        processDocument();
+                        this.processDocument();
                     }
                 }
     
                 // 3. 글 목록 관련 변화일 때만 디바운스를 거쳐 스타일 재적용
                 if (hasRelevantChange)
                 {
-                    if (debounceTimer) clearTimeout(debounceTimer);
-                    debounceTimer = setTimeout(() => 
-                    {
+                    if (debounceTimer)
+                        clearTimeout(debounceTimer);
+
+                    debounceTimer = setTimeout(() => {
                         this.log('[Styler] 👁️ 글 목록 갱신(리프레셔 등) 감지됨 -> 스타일 재적용');
     
-                        processDocument();
-                    }, 300);
+                        this.processDocument();
+                    }, this.CONFIG.debounceDelay);
                 }
             });
     
             // body를 감시하되, attributes는 제외하고 자식 노드 추가/삭제(childList)만 엄격하게 감시
-            observer.observe(document.body, 
+            this.observer.observe(document.body, 
             {
                 childList: true,
                 subtree: true,
-                attributes: false // 속성 변화 감지 제외 (광고/스크립트 노이즈 방지)
+                // 속성 변화 감지 제외 (광고/스크립트 노이즈 방지)
+                attributes: false 
             });
     
             this.log('[Styler] 👁️ 최적화된 DOM 감시 시작 (글 목록 변경 시에만 반응)');
+
         }
     }
 
 
-
+// @@ 클래스화 여기 부터
 
 // ==========================================
 // MARK:실행 영역
