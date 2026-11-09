@@ -14,7 +14,6 @@
 (function() {
     'use strict';
 
-    // FIXME 클래스화
     class JKDVLM
     {
         // MARK: 변수 영역
@@ -46,6 +45,9 @@
         init()
         {
             this.log("스크립트 작동")
+
+            this.initPostTracker();
+            this.initListViewStyler();
         }
 
         /**
@@ -177,7 +179,7 @@
                 a.jk-custom-visited:visited *, 
                 a.jk-custom-visited:link,
                 a.jk-custom-visited:link * {
-                    color: ${CONFIG.visitedColor} !important;
+                    color: ${this.CONFIG.visitedColor} !important;
                 }
             `;
             document.head.appendChild(style);
@@ -259,6 +261,8 @@
                     }
                 });
             });
+
+            // @@ 여기 로그에서 댓글 색칠 되는것도 방문 글로 찍혀서 +2 되는거니 추적 바람
 
             this.log(`[Styler] ✨ 이번 렌더링 결과 -> 스타일 적용된 방문 글: ${matchCount}개`);            
 
@@ -373,21 +377,7 @@
     }
 
 
-// @@ 클래스화 여기 부터
-
-// ==========================================
 // MARK:실행 영역
-// ==========================================
-function main() 
-{
-    this.log('=== 스크립트 실행 시작 ===');
-    
-    // 1. 최초 로드 시 실행
-    initPostTracker();
-    initListViewStyler();
-}
-
-// 스크립트 실행
-main();
+new JKDVLM();
 
 })();
