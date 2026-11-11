@@ -22,16 +22,19 @@
             isDebug: false
             ,STORAGE_KEY: 'dc_visited_posts_store'
             ,EXPIRY_DAYS: 90
-            ,EXPIRY_TIME: 90 * 24 * 60 * 60 * 1000
-            // url 체크 타이머 간격 ms
-            ,urlCheckInterval: 200
+            ,
+            /**
+             * #### 방문 글 저장 만료 기간
+             * @type {number} 
+             */
+            EXPIRY_TIME: 90 * 24 * 60 * 60 * 1000
             ,visitedColor: '#795091'
             // 디바운드 시간 ms
             ,debounceDelay: 300
         };
 
         /**
-         * #### 옵저버
+         * #### 글 목록 변경 감지 옵저버
          * @type {MutationObserver} 
          */
         observer = null;
@@ -42,6 +45,10 @@
             this.init();
         }
 
+        /**
+         * #### 스크립트 시작점
+         * @returns {void} - 
+         */
         init()
         {
             this.log("스크립트 작동")
@@ -76,7 +83,8 @@
 
         /**
          * #### 저장된 방문기록 불러오기 및 오래된 기록 제거
-         * @returns {Map} - 방문기록 맵
+         * @description Map 처럼 키, 값 pair 를 가진 자료구조 객체 반환
+         * @returns {Object<string, number>} - 방문기록
          */
         loadAndCleanStorage() 
         {
@@ -87,16 +95,17 @@
             let rawData = GM_getValue(storageKey, {});
             this.log(`${Object.keys(rawData).length}개`)
 
-            let visitedMap = JSON.parse(JSON.stringify(rawData));
+            /** @type {Object<string, number>} */
+            let visitedData = JSON.parse(JSON.stringify(rawData));
             const now = Date.now();
             let isModified = false;
             let cleanedCount = 0;
-    
-            for (const key in visitedMap) 
+
+            for (const key in visitedData) 
             {
-                if (now - visitedMap[key] > expiryTime) 
+                if (now - visitedData[key] > expiryTime) 
                 {
-                    delete visitedMap[key];
+                    delete visitedData[key];
                     isModified = true;
                     cleanedCount++;
                 }
@@ -105,18 +114,18 @@
             // 오래된 방문 기록 있으면 제거 확정
             if (isModified) 
             {
-                GM_setValue(this.CONFIG.STORAGE_KEY, visitedMap);
+                GM_setValue(this.CONFIG.STORAGE_KEY, visitedData);
                 this.log(`[Storage] 만료된 기록 ${cleanedCount}개 자동 청소 완료`);
             }
-    
-            return visitedMap;
+
+            return visitedData;
         }
 
         /**
          * #### 방문 기록 단일 글 저장
          * @param {string} galleryId - 갤러리url이름
          * @param {string} postNo - 글번호
-         * @returns {void} - 
+         * @returns {void}
          */
         saveVisitedPost(galleryId, postNo) 
         {
@@ -124,12 +133,12 @@
                 return;
     
             const key = `${galleryId}_${postNo}`;
-            let visitedMap = this.loadAndCleanStorage();
+            let visitedData = this.loadAndCleanStorage();
     
-            if (!visitedMap[key]) 
+            if (!visitedData[key]) 
             {
-                visitedMap[key] = Date.now();
-                GM_setValue(this.CONFIG.STORAGE_KEY, visitedMap);
+                visitedData[key] = Date.now();
+                GM_setValue(this.CONFIG.STORAGE_KEY, visitedData);
                 this.log(`[Tracker] 새 글 방문 기록 저장 성공 -> 갤러리: ${galleryId}, 글번호: ${postNo}`);
             } 
             else 
@@ -159,6 +168,8 @@
         }
 
         // MARK: 방문 기록 적용
+
+        // @@ 주석 여기부터
 
         /**
          * #### 페이지에 방문글용 CSS 를 head 에 주입
@@ -276,10 +287,10 @@
         processDocument() 
         {
             // @@ 방문 기록 로드 | 구조 개선 검토
-            let visitedMap = this.loadAndCleanStorage();
+            let visitedData = this.loadAndCleanStorage();
             const targetContainer = document.querySelector('.gall_list') || document.body;
 
-            this.applyVisitedStyles(targetContainer, visitedMap);
+            this.applyVisitedStyles(targetContainer, visitedData);
         }
 
         initListViewObserver()
