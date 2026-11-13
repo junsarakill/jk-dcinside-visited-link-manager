@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DCInside Visited Link Manager
 // @namespace    http://tampermonkey.net/
-// @version      0.4
+// @version      0.5
 // @description  디시 url 방문 기록을 수집하여 페이지에 반영
 // @author       JKAKK
 // @match        https://gall.dcinside.com/*
@@ -169,8 +169,6 @@
 
         // MARK: 방문 기록 적용
 
-        // @@ 주석 여기부터
-
         /**
          * #### 페이지에 방문글용 CSS 를 head 에 주입
          * @description 해당 id를 적용할 곳에 추가
@@ -193,38 +191,29 @@
                     color: ${this.CONFIG.visitedColor} !important;
                 }
             `;
+
             document.head.appendChild(style);
 
             this.log('[CSS] 커스텀 방문 링크 스타일 주입 완료');
         }
 
-        // ==========================================
-        // [Core Feature 2: 목록 페이지 CSS 스타일 주입]
-        // 게시물 목록 조회 시 방문한 링크에 보라색 스타일 적용
-        // ==========================================
+        /**
+         * #### 방문 기록 스타일 적용 시작
+         * @returns {void} - 
+         */
         initListViewStyler() 
         {
             this.log('[Styler] 목록 페이지 스타일러 초기화 시작');
             
-            // CSS 주입
             this.injectCustomCSS();
     
-            // let visitedMap = this.loadAndCleanStorage();
-            // this.log(`[Styler] 스토리지에 적재된 총 방문 기록 수: ${Object.keys(visitedMap).length}개`);
+            const callback = this.applyDocument.bind(this);
             
-            const callback = this.processDocument.bind(this);
-            
-            // 초기 로드 시 실행
-            if (document.readyState === 'loading')
+            // @@ 초기 로드 시 실행
+            if (document.readyState !== 'complete')
             {
-                window.addEventListener('DOMContentLoaded', callback);
+                window.addEventListener('load', callback, { once: true });
             }
-            // else
-                // {
-            //     processDocument();
-            // }
-                
-            setTimeout(callback, 100);
                 
             this.initListViewObserver();
         }
@@ -284,10 +273,10 @@
          * @description 방문 기록을 적용하는 최말단
          * @returns {void} - 
          */
-        processDocument() 
+        applyDocument() 
         {
             // @@ 방문 기록 로드 | 구조 개선 검토
-            let visitedData = this.loadAndCleanStorage();
+            const visitedData = this.loadAndCleanStorage();
             const targetContainer = document.querySelector('.gall_list') || document.body;
 
             this.applyVisitedStyles(targetContainer, visitedData);
@@ -355,7 +344,7 @@
                     // 페이지로 되돌아 왔다면 스타일 재적용
                     else
                     {
-                        this.processDocument();
+                        this.applyDocument();
                     }
                 }
     
@@ -368,7 +357,7 @@
                     debounceTimer = setTimeout(() => {
                         this.log('[Styler] 👁️ 글 목록 갱신(리프레셔 등) 감지됨 -> 스타일 재적용');
     
-                        this.processDocument();
+                        this.applyDocument();
                     }, this.CONFIG.debounceDelay);
                 }
             });
