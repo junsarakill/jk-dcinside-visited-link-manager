@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DCInside Visited Link Manager
 // @namespace    http://tampermonkey.net/
-// @version      0.6
+// @version      0.7
 // @description  디시 url 방문 기록을 수집하여 페이지에 반영
 // @author       JKAKK
 // @match        https://gall.dcinside.com/*
@@ -13,6 +13,12 @@
 
 (function() {
     'use strict';
+
+    /**
+     * #### 방문 기록 데이터
+     * @description 객체 {key : "갤러리id_글번호", value : 방문시간}
+     * @typedef {Object<string, number>} VisitedData
+     */
 
     class JKDVLM
     {
@@ -58,7 +64,8 @@
         init()
         {
             this.log("스크립트 작동")
-
+            
+            this.cleanExpiredStorage();
             this.initPostTracker();
             this.initListViewStyler();
         }
@@ -89,43 +96,55 @@
 
         /**
          * #### 저장된 방문기록 불러오기 및 오래된 기록 제거
-         * ;@@ 오래된 기록 제거는 별도 타이머로 하는걸로 분리 기존 로직은 플래그로 여부 관리
          * @description Map 처럼 키, 값 pair 를 가진 자료구조 객체 반환
-         * @returns {Object<string, number>} - 방문기록
+         * @returns {VisitedData} - 방문기록
          */
-        loadAndCleanStorage() 
+        loadStorage() 
         {
             const storageKey = this.CONFIG.STORAGE_KEY
-            const expiryTime = this.CONFIG.EXPIRY_TIME
 
             // XXX readme에 언급된 캐시 문제 테스트용 그냥 getvalue 안하고 깊은 복사
             let rawData = GM_getValue(storageKey, {});
             this.log(`${Object.keys(rawData).length}개`)
 
-            /** @type {Object<string, number>} */
+            /** @type {VisitedData} */
             let visitedData = JSON.parse(JSON.stringify(rawData));
+
+            return visitedData;
+        }
+
+        /**
+         * #### 오래된 방문기록 제거
+         * @description 보관 기간이 만료된 방문기록을 제거하고 저장
+         * @returns {number} - 제거된 기록 개수
+         */
+        cleanExpiredStorage()
+        {
+            const storageKey = this.CONFIG.STORAGE_KEY;
+            const expiryTime = this.CONFIG.EXPIRY_TIME;
+
+            const visitedData = this.loadStorage();
+
             const now = Date.now();
-            let isModified = false;
             let cleanedCount = 0;
 
-            for (const key in visitedData) 
+            for (const key in visitedData)
             {
-                if (now - visitedData[key] > expiryTime) 
+                if (now - visitedData[key] > expiryTime)
                 {
                     delete visitedData[key];
-                    isModified = true;
                     cleanedCount++;
                 }
             }
-            
+
             // 오래된 방문 기록 있으면 제거 확정
-            if (isModified) 
+            if (cleanedCount > 0)
             {
-                GM_setValue(this.CONFIG.STORAGE_KEY, visitedData);
+                GM_setValue(storageKey, visitedData);
                 this.log(`[Storage] 만료된 기록 ${cleanedCount}개 자동 청소 완료`);
             }
 
-            return visitedData;
+            return cleanedCount;
         }
 
         /**
@@ -140,7 +159,7 @@
                 return;
     
             const key = `${galleryId}_${postNo}`;
-            let visitedData = this.loadAndCleanStorage();
+            let visitedData = this.loadStorage();
     
             if (!visitedData[key]) 
             {
@@ -227,7 +246,8 @@
 
         /**
          * #### 컨테이너 내의 게시물 링크들을 순회하며 방문 기록 대조 후 CSS 적용
-         * @param {HTMLElement} rootElement - 설명
+         * @param {HTMLElement} rootElement - 최상위 요소
+         * @param {VisitedData} visitedMap - 방문 기록
          * @returns {void} - 
          */
         applyVisitedStyles(rootElement, visitedMap) 
@@ -283,7 +303,7 @@
         applyDocument() 
         {
             // @@ 방문 기록 로드 | 구조 개선 검토
-            const visitedData = this.loadAndCleanStorage();
+            const visitedData = this.loadStorage();
             const targetContainer = document.querySelector('.gall_list') || document.body;
 
             this.applyVisitedStyles(targetContainer, visitedData);
